@@ -1,3 +1,8 @@
+#Local cookie storage for gecko driver
+cookies/
+tests/cookies/  
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
