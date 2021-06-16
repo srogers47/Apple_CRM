@@ -60,8 +60,10 @@ async def get_headers(driver, app_name, start_url):
     try:
         show_all = driver.find_elements_by_class_name("section__nav__see-all-link")
         show_all[1].click()
-    except ENI: #Element not interactable
+    except ENI or IndexError: #Element not interactable
         try:
+            driver.refresh() 
+            print("Driver refreshed") 
             await asyncio.sleep(10) #Try waiting longer for element to render.
             show_all = driver.find_elements_by_class_name("section__nav__see-all-link")
             show_all[1].click()
@@ -69,10 +71,19 @@ async def get_headers(driver, app_name, start_url):
             driver.refresh() #If the element is rendered but isn't in view; try refreshing the page and scrolling down.
             await asyncio.sleep(10)
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);") #Scroll down to locate element
-            show_all = driver.find_elements_by_class_name("section__nav__see-all-link")
+            show_all = driver.find_elements_by_class_name("section__nav__see-all-link") 
             show_all[1].click() #Click see all reviews button.
 
     await asyncio.sleep(5) #wait to ensure that the script below loads the url for requesting reviews and not artwork for a loading page.
+    try:
+        get_headers.total_reviews = driver.find_element_by_css_selector("div.we-customer-ratings__count").text #Grab total num of reviews from page.  thousand is abbreviated with 'K' ie '10.2K Reviews'.  Need to preprocess. 
+    except NoSuchElementException: #Could also be in <p> tag as opposed to a <div>.  
+        driver.refresh()
+        await asyncio.sleep(15)
+        get_headers.total_reviews = driver.find_element_by_css_selector("p.we-customer-ratings__count").text
+    
+    print("Total number of reviews: ", get_headers.total_reviews) 
+        
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);") #Scroll down to invoke xhr request for rendering more reviews
     print("Grab url headers for requesting reviews")
     #Grab url for review page.
