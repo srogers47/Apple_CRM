@@ -1,5 +1,4 @@
 #! /usr/bin/env python3 
-#Debugging do I need to include these imports? 
 import asyncio
 import pickle
 from seleniumwire import webdriver #Grab headers/cookies over the wire/network
@@ -28,11 +27,10 @@ async def get_headers(driver, app_name, start_url):
     print("Initiated at: ", datetime.datetime.now())
     #Search google for appstore
     print("Loading page...")
-    await asyncio.sleep(5)
     try:
         search = driver.find_element_by_id("ac-gn-link-search")
         search.click()
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
     except:
         print("Loading...")
         await asyncio.sleep(25)
@@ -51,7 +49,7 @@ async def get_headers(driver, app_name, start_url):
     except NoSuchElementException:
         print("Error; refreshing page.")
         driver.refresh() #Refresh
-        await asyncio.sleep(15)
+        await asyncio.sleep(60) ###NOTE: DEBUGGGING. Ideally make this shorter.
         view_more = driver.find_element_by_class_name("as-links-name").click()
 
     print("Accessing app page")
