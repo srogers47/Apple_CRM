@@ -1,19 +1,15 @@
 #! /usr/bin/env python3 
 import asyncio
-import pickle
+#import aiofiles
+#import pickle
 from seleniumwire import webdriver #Grab headers/cookies over the wire/network
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys 
 from selenium.common.exceptions import NoSuchElementException, ElementNotInteractableException as ENI
 import datetime
+import os 
 
-
-#NOTE: Need to instantiate the following class variables in order for script to run on import:
-    #app_name
-    #start_url 
-    #headers
-    #url
 
 #driver and driver options  should be defined in function calling this script.
 
@@ -49,7 +45,7 @@ async def get_headers(driver, app_name, start_url):
     except NoSuchElementException:
         print("Error; refreshing page.")
         driver.refresh() #Refresh
-        await asyncio.sleep(60) ###NOTE: DEBUGGGING. Ideally make this shorter.
+        await asyncio.sleep(30)
         view_more = driver.find_element_by_class_name("as-links-name").click()
 
     print("Accessing app page")
@@ -72,9 +68,9 @@ async def get_headers(driver, app_name, start_url):
             show_all = driver.find_elements_by_class_name("section__nav__see-all-link") 
             show_all[1].click() #Click see all reviews button.
 
-    await asyncio.sleep(5) #wait to ensure that the script below loads the url for requesting reviews and not artwork for a loading page.
+    await asyncio.sleep(5) #wait to ensure that the script below loads the url for requesting reviews.
     try:
-        get_headers.total_reviews = driver.find_element_by_css_selector("div.we-customer-ratings__count").text #Grab total num of reviews from page.  thousand is abbreviated with 'K' ie '10.2K Reviews'.  Need to preprocess. 
+        get_headers.total_reviews = driver.find_element_by_css_selector("div.we-customer-ratings__count").text #Grab total num of reviews from page.  Need to preprocess. 
     except NoSuchElementException: #Could also be in <p> tag as opposed to a <div>.  
         driver.refresh()
         await asyncio.sleep(15)
@@ -85,11 +81,16 @@ async def get_headers(driver, app_name, start_url):
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);") #Scroll down to invoke xhr request for rendering more reviews
     print("Grab url headers for requesting reviews")
     #Grab url for review page.
-    get_headers.url = driver.current_url #Url, don't need xhr request. 
     await asyncio.sleep(5)
-    #Store cookies in pickle file. 
-    #CookieJar object can't be pickled so use list comp to write cookies in CookieJar.
-    cookies = driver.get_cookies()
-    pickle.dump([cookie for cookie in cookies], open(f"cookies/{app_name}.pkl","wb"))
-    get_headers.headers = driver.last_request.headers #Grab headers
+    get_headers.url = driver.last_request.url #Extract review page url
+    print(get_headers.url) 
+#    async with aiofiles.open(f"./cookies/{app_name}.pkl",'wb') as f:
+#        cookie = pickle.dumps([cookie for cookie in cookies])
+#        await f.write(cookie) 
+    get_headers.headers = driver.last_request.headers #Extract headers from xhr request.  
+    #Clear driver cookies and refresh page to generate cookie for review page.
+    driver.delete_all_cookies()
+    driver.refresh()
+    await asyncio.sleep(10) 
+    get_headers.cookies = driver.get_cookies() #CookieJar object 
     return driver.quit() #Tear down browser.

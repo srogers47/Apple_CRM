@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 #selenium
 from seleniumwire import webdriver
@@ -9,10 +9,11 @@ from selenium.common.exceptions import NoSuchElementException, ElementNotInterac
 
 import datetime
 import asyncio 
-import aiohttp
-#aiofiles #Non-blocking access to .pkl file containing cookies
-import pickle
+import aiohttp #Non-blocking requests
+#import aiofiles #Non-blocking local file processes 
+#import pickle
 import json
+import os 
 
 from crawler_script import get_headers  
 
@@ -24,7 +25,9 @@ class Main:
     url = "" #Use to pass review request url into get_reviews
     headers = [] 
     start_url = "https://www.apple.com/app-store/"    
+    fresh_cookies = [] #Temp data structure.  Will extract from list to pass cookie dictionary into aiohttp.ClientSession() 
     missed = [] #Reviews that aren't extracted successfully added to this list. Used in data_storage.py
+    num_reviews = []         
 
     async def crawl_to_app(self, app_name, initial_pass):
         """
@@ -42,11 +45,13 @@ class Main:
         await get_headers(driver=driver, app_name=app_name, start_url=self.start_url) #Crawler script 
         self.url = get_headers.url #Base url used for requests. 
         self.headers = get_headers.headers #Headers used for requests.
+        self.fresh_cookies = get_headers.cookies #CookieJar object extracted from crawl
         if initial_pass: 
             total_reviews = get_headers.total_reviews 
             await self.calc_num_reviews(total_reviews) #Only extract/calculate the amount of available reviews once.  
         print("Cookies, headers, and new url retrieved.") #Cookies stored in pickle
-        print(self.headers, self.url) #Testing output 
+        print(self.headers, self.url, self.fresh_cookies) #Testing output 
+        
 
 
     async def extract_reviews(self, session, i): 
@@ -70,14 +75,16 @@ class Main:
                 ('additionalPlatforms', 'appletv,ipad,iphone,mac'),
     ) 
         async with session.get(self.url, headers=self.headers, params=params) as response:
-            temp = response.json()['data'] 
+            print(f"Response: {response}") 
+            temp = await response.json() 
             try:
-                await temp #temp json 
+                temp = temp['data'] #temp json 
                 print(i,temp) #testing output
             except KeyError: 
                 #pass into array of missed datapoints for retry.
                 self.missed.append(i) 
                 print("Error retrieving data at offset", i)
+                asyncio.sleep(2) #Test
             if temp:
                 for a in temp: #Extract data points from json  
                     ratings = a['attributes']['rating']
@@ -101,20 +108,20 @@ class Main:
         convert string to integer.  
         Only has to be calculated once during extraction.  
         """ 
-        
-        total = total_reviews[0].rstrip() 
+        total = total_reviews.split() 
         total = total[0] #Drop 'Ratings' from string.
+        print(total) #Delete print statements 
         #Check abbreviation.'K' for thousand, or 'M' for million? 
         num = total[:-1] #Numbers
+        print(num)
         abbrev = total[-1] #Abbreviation
-        if abbrev.upper == 'M': 
-           num_reviews = pow(float(num),7) 
-        if abbrev.upper == 'K':
-           num_reviews = pow(float(num), 3) 
-
-        self.calc_num_reviews.num_reviews = num_reviews #Instance of function attribute 
-        print(f"Estimated {calc_num_reviews.num_reviews} can be extracted") 
-        return self.calc_num_reviews.num_reviews
+        print(abbrev)
+        if abbrev == "M": 
+           self.num_reviews.append(pow(int(float(num)), 7)) #Wrap float in int to avoid raising value errors.
+        if abbrev == "K":
+           self.num_reviews.append(pow(int(float(num)), 3)) 
+        print(f"Estimated {self.num_reviews[0]} can be extracted") 
+        return self.num_reviews
 
 
     async def fetch(self, app_name):
@@ -127,11 +134,13 @@ class Main:
         initial_pass = True
         await self.fetch_crawl(app_name, initial_pass) 
         #num_reviews = input(f"Would you like to extract all {num_reviews} reviews?" ) 
-        initial_pass = False #We don't need to calculate 
+        initial_pass = False #We don't need to calculate after initial pass
         #Run the tasks concurrently, but prioritize retrieval of request headers/cookie.  
-        while reviews_extracted < len(calc_num_reviews.num_reviews):  
-            await self.fetch_extraction(start, reviews_extracted)
+        while reviews_extracted < int(self.num_reviews[0]):  
+            await self.fetch_extraction(start, reviews_extracted, app_name)
             await self.fetch_crawl(app_name, initial_pass) 
+            if reviews_extracted == 5000: #Testing 
+                break 
             start += 1000 #Update start
             reviews_extracted += 1000 #Extract reviews by grouping of this value.  
         print(f"{reviews_extracted} have been extracted.") 
@@ -143,17 +152,26 @@ class Main:
         Data extraction will require on going retrieval of cookies.
         """
         await self.crawl_to_app(app_name, initial_pass) 
-        
 
-    async def fetch_extraction(self, start, reviews_extracted): 
+
+    async def fetch_extraction(self, start, reviews_extracted, app_name): 
         """
         Session restarts with every iteration in fetch.
+        Pass in cookies.
         Process is not seamless and entirely relies on duration of crawler task. 
+        Optimize crwaler_script before production!
         """
-        with aiohttp.ClientSession(loop=loop) as session:
-            with pickle.load(open(f"cookies/{m.app_name}.pk1", "rb")) as cookie: #Load cookies into session. Use context manager to close file after cookie is set. 
-                for c in cookie:
-                    s.cookies.set(c['name'], c['value'], domain=c['domain']) 
+        del self.fresh_cookies[0]['path'] #Remove path from cookies. Well raise error if included due aiohttp prohibitting path being set in session. 
+        del self.fresh_cookies[0]['domain'] #The same goes for domain.  
+        del self.fresh_cookies[0]['secure'] #and secure.
+        del self.fresh_cookies[0]['httpOnly'] #remove just about everything but name and value...
+        del self.fresh_cookies[0]['sameSite'] #This code is for instructive purposes. In production simply extract name and value.
+
+        #async with aiofiles.open(f"./cookies/{app_name}.pkl", 'rb') as f: #Load cookies into session. Use context manager to close file after cookie is set. 
+            #cookie = await f.read()
+            #cookie = pickle.loads(cookie) #Unpickle/Deserialize 
+            #assert os.stat(f"./cookies/{app_name}.pkl").st_size > 0 #Test. If the write was unsuccessful, pickle file will be empty and error will be raised.  
+        async with aiohttp.ClientSession(loop=loop, cookies=self.fresh_cookies[0]) as session: #Set session cookies
             tasks = [self.extract_reviews(session, i) for i in range(int(start), int(reviews_extracted), 10)] #Prep extraction 
             results = await asyncio.gather(*tasks) #Run gathered tasks 
         
@@ -164,4 +182,5 @@ if __name__=='__main__':
     app_name = "doximity"  #input("Name of app: ") #Testing 
     results = loop.run_until_complete(m.fetch(app_name)) 
     print(results) #test will print none unless reviews are extracted. 
+    print(missed) #Debugging 
 
