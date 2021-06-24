@@ -10,8 +10,6 @@ from selenium.common.exceptions import NoSuchElementException, ElementNotInterac
 import datetime
 import asyncio 
 import aiohttp #Non-blocking requests
-#import aiofiles #Non-blocking local file processes 
-#import pickle
 import json
 import os 
 
